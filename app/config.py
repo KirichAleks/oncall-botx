@@ -23,10 +23,18 @@ class Settings(BaseSettings):
     
     webhook_secret: Optional[str] = Field(None, env="WEBHOOK_SECRET")
     # Новые настройки для Grafana OnCall
+    # Внешний URL для формирования ссылок в сообщениях (секрет/переменная окружения)
+    ext_grafana_url: Optional[str] = Field(None, env="EXT_GRAFANA_URL")
     grafana_oncall_url: Optional[str] = Field(None, env="GRAFANA_ONCALL_URL")
     grafana_oncall_token: Optional[str] = Field(None, env="GRAFANA_ONCALL_TOKEN")
     grafana_oncall_timeout: int = Field(10, env="GRAFANA_ONCALL_TIMEOUT")
     log_level: str = Field("INFO", env="LOG_LEVEL")
+    # Управление ожиданием callback от Express/BotX для отправок сообщений
+    botx_wait_callback: bool = Field(False, env="BOTX_WAIT_CALLBACK")
+    # Локальная таймзона для форматирования времени дежурств (например, "Europe/Moscow")
+    local_timezone: Optional[str] = Field(None, env="LOCAL_TIMEZONE")
+    # Окно дедупликации повторных escalation (в миллисекундах)
+    escalation_dedup_window_ms: int = Field(2000, env="ESCALATION_DEDUP_WINDOW_MS")
 # ...existing code...
 
     @validator("log_level", pre=True, always=True)

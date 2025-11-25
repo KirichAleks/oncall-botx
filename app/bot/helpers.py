@@ -56,7 +56,12 @@ async def send_message_to_chat(
             logger.debug("Sending message to chat. bot_id=%s chat_id=%s body=%s", bot_uuid, chat_uuid, text)
 
             # Call pybotx and log returned sync_id to trace delivery
-            sync_id = await bot.send_message(bot_id=bot_uuid, chat_id=chat_uuid, body=text)
+            sync_id = await bot.send_message(
+                bot_id=bot_uuid,
+                chat_id=chat_uuid,
+                body=text,
+                wait_callback=settings.botx_wait_callback,
+            )
             logger.info("bot.send_message returned sync_id=%s for chat=%s", sync_id, chat_uuid)
         elif hasattr(bot, "answer_message") and callable(getattr(bot, "answer_message")):
             # answer_message требует контекст сообщения, не подходит для отправки в произвольный чат

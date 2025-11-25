@@ -1,6 +1,8 @@
 import logging
 from typing import Dict, Any, List
 from datetime import datetime
+from zoneinfo import ZoneInfo
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,9 @@ def format_shift(shift: Dict[str, Any]) -> str:
     if start_time:
         try:
             dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+            tz = ZoneInfo(settings.local_timezone) if settings.local_timezone else None
+            if tz:
+                dt = dt.astimezone(tz)
             lines.append(f"⏰ Начало: {dt.strftime('%d.%m.%Y %H:%M')}")
         except Exception:
             lines.append(f"⏰ Начало: {start_time}")
@@ -66,6 +71,9 @@ def format_shift(shift: Dict[str, Any]) -> str:
     if end_time:
         try:
             dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
+            tz = ZoneInfo(settings.local_timezone) if settings.local_timezone else None
+            if tz:
+                dt = dt.astimezone(tz)
             lines.append(f"⏳ Конец: {dt.strftime('%d.%m.%Y %H:%M')}")
         except Exception:
             lines.append(f"⏳ Конец: {end_time}")
@@ -155,6 +163,9 @@ def format_oncall_list(shifts_data: List[Dict[str, Any]], schedule_name: str = "
         if start_time:
             try:
                 dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+                tz = ZoneInfo(settings.local_timezone) if settings.local_timezone else None
+                if tz:
+                    dt = dt.astimezone(tz)
                 lines.append(f"   ⏰ {dt.strftime('%d.%m.%Y %H:%M')}")
             except Exception:
                 # Fallback: just append the raw value
@@ -163,4 +174,70 @@ def format_oncall_list(shifts_data: List[Dict[str, Any]], schedule_name: str = "
     if len(shifts_data) > max_items:
         lines.append(f"\n... и еще {len(shifts_data) - max_items} смен")
     
+    return "\n".join(lines)
+
+def format_oncall_day_summary(shifts_data: List[Dict[str, Any]]) -> str:
+    """Дневная сводка дежурств.
+
+    Формат:
+    📅 Сегодня DD.MM.YYYY
+    💻 Дежурный инженер: | Дежурные инженеры:
+    - <имя> — HH:MM - HH:MM
+    (Без скобок вокруг интервала времени)
+    """
+    from datetime import datetime as _dt
+
+    tz = ZoneInfo(settings.local_timezone) if settings.local_timezone else None
+    now_dt = _dt.now(tz) if tz else _dt.now()
+    today = now_dt.strftime('%d.%m.%Y')
+    count = len(shifts_data or [])
+    header = "Дежурный инженер:" if count == 1 else "Дежурные инженеры:" if count > 1 else "Дежурные инженеры:" 
+
+    lines: List[str] = [f"📅 Сегодня {today}", f"💻 {header}"]
+
+    if not shifts_data:
+        lines.append("- нет данных")
+        return "\n".join(lines)
+
+    def _name(shift: Dict[str, Any]) -> str:
+        user = shift.get("user") or {}
+        name = (
+            user.get("name")
+            or shift.get("user_username")
+            or shift.get("user_email")
+            or user.get("user_username")
+            or user.get("user_email")
+            or "Unknown"
+        )
+        return name
+
+    def _hm(ts: str) -> str:
+        if not ts:
+            return ""
+        try:
+            dt = _dt.fromisoformat(ts.replace("Z", "+00:00"))
+            if tz:
+                dt = dt.astimezone(tz)
+            return dt.strftime('%H:%M')
+        except Exception:
+            # best-effort: попытка урезать до HH:MM
+            if len(ts) >= 16 and ts[11:16].replace(':','').isdigit():
+                return ts[11:16]
+            return ts
+
+    for shift in shifts_data:
+        start = (
+            shift.get("shift_start")
+            or shift.get("start")
+            or shift.get("start_time")
+            or ""
+        )
+        end = (
+            shift.get("shift_end")
+            or shift.get("end")
+            or shift.get("end_time")
+            or ""
+        )
+        lines.append(f"- {_name(shift)} — {_hm(start)} - {_hm(end)}")
+
     return "\n".join(lines)

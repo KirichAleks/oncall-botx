@@ -10,13 +10,10 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.models.routing import ChatRouter
-from app.webhooks.formatters import (
-    format_escalation_message, format_acknowledge_message, format_resolve_message,
-    format_unacknowledge_message, format_unresolve_message, format_silence_message,
-    format_unsilence_message, format_unknown_event_message
-)
+from app.webhooks.formatters import format_oncall_webhook_message
 
 logger = logging.getLogger(__name__)
+
 
 # Инициализируем маршрутизатор при загрузке модуля
 _chat_router: ChatRouter = None
@@ -124,6 +121,11 @@ async def handle_oncall_webhook(request: Request, bot):
 async def process_oncall_event_async(event_data: dict, target_chat_id: str, bot):
     """Асинхронная обработка события OnCall"""
     try:
+        event_type = (event_data.get("event", {}).get("type") or "").lower()
+        alert_group_id = event_data.get("alert_group", {}).get("id", "unknown")
+
+        # Убираем прежнюю дедупликацию escalation. Поведение теперь задаётся логикой форматтера по event_type.
+
         alert_message = parse_oncall_event(event_data)
 
         if alert_message:
@@ -132,11 +134,10 @@ async def process_oncall_event_async(event_data: dict, target_chat_id: str, bot)
                     bot_id=UUID(settings.botx_bot_id),
                     chat_id=UUID(target_chat_id),
                     body=alert_message,
+                    wait_callback=settings.botx_wait_callback,
                 )
             except Exception:
                 logger.exception("Failed to send message to chat %s", target_chat_id)
-            event_type = event_data.get("event", {}).get("type", "unknown")
-            alert_group_id = event_data.get("alert_group", {}).get("id", "unknown")
             logger.info("%s event for %s sent to chat %s", event_type, alert_group_id, target_chat_id)
         else:
             logger.warning("Empty alert message generated, skipping send")
@@ -145,81 +146,9 @@ async def process_oncall_event_async(event_data: dict, target_chat_id: str, bot)
         logger.exception("Error in async processing: %s", e)
 
 def parse_oncall_event(event_data: Dict[str, Any]) -> str:
-    """Парсинг событий Grafana OnCall и формирование сообщения"""
+    """Парсинг события и формирование сообщения (URL берется внутри форматтера)."""
     try:
-        event_type = event_data.get("event", {}).get("type", "unknown")
-        alert_group = event_data.get("alert_group", {}) or {}
-        user = event_data.get("user") or {}
-        integration = event_data.get("integration") or {}
-        alert_payload = event_data.get("alert_payload") or {}
-
-        # Основные данные группы алертов
-        alert_group_id = alert_group.get("id", "N/A")
-        title = (alert_group.get("title") or "No title").strip()
-        state = alert_group.get("state", "unknown")
-        permalink = (alert_group.get("permalinks") or {}).get("web", "No link")
-        alerts_count = alert_group.get("alerts_count", 0)
-
-        # Дополнительные параметры событий
-        until = event_data.get("event", {}).get("until")
-
-        # Информация об интеграции
-        integration_name = integration.get("name", "Unknown")
-
-        # Информация о пользователе
-        username = user.get("username")
-
-        # Данные из alert_payload (информация об алертах внутри группы)
-        num_firing = alert_payload.get("numFiring", 0)
-        num_resolved = alert_payload.get("numResolved", 0)
-        group_labels = alert_payload.get("groupLabels", {}) or {}
-        common_labels = alert_payload.get("commonLabels", {}) or {}
-        
-        # Получаем аннотации и severity из первого алерта
-        annotations = {}
-        severity = None
-        alerts_list = alert_payload.get("alerts", [])
-        if alerts_list and isinstance(alerts_list, list) and len(alerts_list) > 0:
-            first_alert = alerts_list[0]
-            annotations = first_alert.get("annotations", {}) or {}
-            labels = first_alert.get("labels", {}) or {}
-            severity = labels.get("severity")
-
-        # Создаем короткий ID для отображения
-        short_id = alert_group_id[:8] if isinstance(alert_group_id, str) and len(alert_group_id) > 8 else alert_group_id
-
-        # Форматируем сообщение в зависимости от типа события
-        format_mapping = {
-            "escalation": format_escalation_message,
-            "acknowledge": format_acknowledge_message,
-            "resolve": format_resolve_message,
-            "unacknowledge": format_unacknowledge_message,
-            "unresolve": format_unresolve_message,
-            "silence": format_silence_message,
-            "unsilence": format_unsilence_message,
-        }
-
-        formatter = format_mapping.get(event_type)
-        if formatter:
-            if event_type == "silence":
-                return formatter(
-                    short_id, title, username, alerts_count, state, num_firing, num_resolved,
-                    integration_name, permalink, group_labels, common_labels, until, annotations
-                )
-            elif event_type == "escalation":
-                return formatter(
-                    short_id, title, username, alerts_count, state, num_firing, num_resolved,
-                    integration_name, permalink, group_labels, common_labels, annotations, severity
-                )
-            else:
-                return formatter(
-                    short_id, title, username, alerts_count, state, num_firing, num_resolved,
-                    integration_name, permalink, group_labels, common_labels, annotations
-                )
-        else:
-            logger.warning("Unknown event type: %s", event_type)
-            return format_unknown_event_message(event_type, title, short_id)
-
+        return format_oncall_webhook_message(event_data)
     except Exception as e:
         logger.exception("Error parsing OnCall event: %s", e)
         return f"❌ Error processing alert: {str(e)}"

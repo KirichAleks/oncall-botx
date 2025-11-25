@@ -14,7 +14,7 @@ from app.bot.setup import create_bot
 from app.bot.helpers import send_message_to_chat, send_formatted_oncall_to_chat
 from app.webhooks.handlers import handle_oncall_webhook
 from app.grafana.scheduler import fetch_current_oncall, fetch_schedule_info, fetch_all_schedules
-from app.webhooks.schedule_formatters import format_current_oncall, format_oncall_list
+from app.webhooks.schedule_formatters import format_current_oncall, format_oncall_list, format_oncall_day_summary
 from app.models.routing import ChatRouter
 
 # Настройка логирования
@@ -243,8 +243,8 @@ async def get_current_oncall_http(
             if target_chat_id:
                 try:
                     if len(shifts) > 1:
-                        # Если несколько смен — отправляем список
-                        text = format_oncall_list(shifts, schedule_name, max_items=10)
+                        # Если несколько смен — отправляем краткое резюме дня по формату
+                        text = format_oncall_day_summary(shifts)
                         sent_flag = await send_message_to_chat(bot, target_chat_id, text)
                         logger.info("Sent oncall list to chat %s for schedule %s", target_chat_id, schedule_id)
                     else:
@@ -332,7 +332,7 @@ async def get_oncall_shifts_http(
             target_chat_id = chat_router.get_chat_id(event_data)
             
             if target_chat_id:
-                text = format_oncall_list(shifts, schedule_name, max_items=10)
+                text = format_oncall_day_summary(shifts)
                 await send_message_to_chat(bot, target_chat_id, text)
                 logger.info("Sent shifts list to chat %s for schedule %s", target_chat_id, schedule_id)
         
